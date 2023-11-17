@@ -258,5 +258,10 @@ class IndexPropagation:
         if isinstance(index, IndexPropVar) and index.is_symbolic:
             # If we are turning a indirect indexing into direct, we need to wrap it.
             index = index.value.expr
-            return index + Where(index >= 0, 0, size)
+            result = index + Where(index >= 0, 0, size)
+            var = self.materialize_expr(result, torch.int64)
+            self._inner.check_bounds(var, result, size)
+
+            return result
+
         return self.fallback("indirect_indexing", (index, size, check), {}).value

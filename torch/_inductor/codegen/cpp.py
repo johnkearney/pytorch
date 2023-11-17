@@ -1236,6 +1236,15 @@ class CppKernel(Kernel):
         """
         return cexpr(self.rename_indexing(index))
 
+    def get_ranges(self):
+        ranges = {}
+        for idx, upper in zip(self.itervars, self.ranges):
+            r = ValueRanges.unknown()
+            if isinstance(upper, int) or upper.is_number:
+                r = ValueRanges(0, upper - 1)
+            ranges[idx] = r
+        return ranges
+
     def load(self, name: str, index: sympy.Expr):
         var = self.args.input(name)
         index = self.rename_indexing(index)
