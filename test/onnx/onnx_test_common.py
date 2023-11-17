@@ -442,14 +442,24 @@ def _compare_pytorch_onnx_with_ort(
     ref_outputs = onnx_program.adapt_torch_outputs_to_onnx(
         ref_model(*ref_input_args, **ref_input_kwargs)
     )
-
     ort_outputs = onnx_program(*input_args, **input_kwargs)
 
-    if len(ref_outputs) != len(ort_outputs):
+    # When model is a torch.export.ExportedProgram, the number of outputs in the ONNX model can be greater
+    # than the number of outputs in the original model. This is because the ONNX model may contain
+    # additional outputs for the exported program's mutated inputs and buffers.
+    # Therefore, we need to ignore the first few outputs from ort_outputs when comparing results length, type and shape.
+    len_ref_outputs = len(ref_outputs)
+    ort_outputs_offset = 0  # The first ort_outputs_offset outputs from ort_outputs must be ignore by the checks below
+    if isinstance(model, torch.export.ExportedProgram):
+        len_ref_outputs = len(model.graph_signature.output_specs)
+        ort_outputs_offset = len_ref_outputs - len(ref_outputs)
+
+    if len_ref_outputs != len(ort_outputs):  # Ignore
         raise AssertionError(
             f"Expected {len(ref_outputs)} outputs, got {len(ort_outputs)}"
         )
-    for ref_output, ort_output in zip(ref_outputs, ort_outputs):
+
+    for ref_output, ort_output in zip(ref_outputs, ort_outputs[ort_outputs_offset:]):
         torch.testing.assert_close(
             ref_output, torch.tensor(ort_output), rtol=rtol, atol=atol
         )
