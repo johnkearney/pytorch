@@ -6,6 +6,7 @@ import logging
 import sys
 import textwrap
 import time
+from concurrent.futures import ThreadPoolExecutor
 from io import StringIO
 
 from typing import Any, Callable, Dict, List, Optional, Type, Union
@@ -780,7 +781,26 @@ class AlgorithmSelectorCache(PersistentCache):
         def make_benchmark_fn():
             return self.make_benchmark_fn(choices, input_nodes, layout, input_gen_fns)
 
+        def precompile(choices):
+            if config.autotune_precompilation_workers <= 0:
+                return
+            with ThreadPoolExecutor(
+                max_workers=min(
+                    config.autotune_precompilation_workers, torch.get_num_threads()
+                )
+            ) as executor:
+                executor.map(
+                    lambda c: c.precompile(),
+                    [c for c in choices if hasattr(c, "precompile")],
+                    timeout=60 * 15,
+                )
+
         def autotune(choices):
+            try:
+                precompile(choices)
+            except TimeoutError:
+                log.warning("Precompilation phase took longer than timeout allowed. Continuing")
+                pass
             return make_benchmark_fn()(choices)
 
         if config.autotune_in_subproc:
