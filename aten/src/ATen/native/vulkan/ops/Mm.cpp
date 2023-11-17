@@ -686,7 +686,9 @@ Tensor run_baddbmm_context(
       "Reason: The input has the wrong dimension; the tensor of a batch of matrices should contain 3 dimensions: batch, height, width.");
 
   const Tensor input = input_arg.is_vulkan() ? input_arg : input_arg.vulkan();
-  const vTensor& v_input = convert(input);
+  
+  vTensor v_input = convert(input);
+  v_input = pack_inputs_using_height_packing(input);
 
   const vTensor& packed_v_weight = convert(
       linear_context->get_val(LinearPackedContext::Packed::Weight).toTensor());
@@ -825,6 +827,7 @@ Tensor addmm(
     const Tensor& weight,
     const Scalar& beta,
     const Scalar& alpha) {
+  std::cout << "addmm" << std::endl;
   return run_addmm_context(
       input,
       alpha.to<float>(),
@@ -837,6 +840,7 @@ Tensor addmm(
 }
 
 Tensor mm(const Tensor& mat1_arg, const Tensor& mat2_arg) {
+  std::cout << "mm" << std::endl;
   return run_addmm_context(
       mat1_arg,
       1.0f,
@@ -849,6 +853,7 @@ Tensor mm(const Tensor& mat1_arg, const Tensor& mat2_arg) {
 }
 
 Tensor bmm(const Tensor& mat1_arg, const Tensor& mat2_arg) {
+  std::cout << "bmm" << std::endl;
   return run_baddbmm_context(
       mat1_arg,
       1.0f,
@@ -863,6 +868,7 @@ Tensor baddbmm(
     const Tensor& weight,
     const Scalar& beta,
     const Scalar& alpha) {
+  std::cout << "baddbmm" << std::endl;
   return run_baddbmm_context(
       input,
       alpha.to<float>(),

@@ -1093,11 +1093,64 @@ TEST_F(VulkanAPITest, baddbmm_bias_boardcast_reduce_all) {
   test_baddbmm(bias_cpu, m1_cpu, m2_cpu, beta, alpha);
 }
 
-void test_bmm(at::Tensor m1_cpu, at::Tensor m2_cpu) {
+void test_matmul(at::Tensor m1_cpu, at::Tensor m2_cpu, bool m2_use_vulkan = false) {
+  c10::InferenceMode mode;
+  const auto out_cpu = at::matmul(m1_cpu, m2_cpu);
+
+  const auto out_vk = at::matmul(
+      m1_cpu.vulkan(),
+      m2_use_vulkan ? m2_cpu.vulkan(): m2_cpu);
+
+  const auto check = almostEqual(out_cpu, out_vk.cpu());
+  if (!check) {
+    showRtol(out_cpu, out_vk.cpu());
+  }
+
+  ASSERT_TRUE(check);
+}
+
+TEST_F(VulkanAPITest, matmul_3d_weight_vulkan) {
+  // This will call at::bmm
+  const auto m1_cpu =
+      at::rand({13, 23, 45}, at::device(at::kCPU).dtype(at::kFloat));
+  const auto m2_cpu =
+      at::rand({13, 45, 26}, at::device(at::kCPU).dtype(at::kFloat));
+  test_matmul(m1_cpu, m2_cpu, true);
+}
+
+TEST_F(VulkanAPITest, matmul_3d_weight_cpu) {
+  // This will call at::bmm
+  const auto m1_cpu =
+      at::rand({13, 23, 45}, at::device(at::kCPU).dtype(at::kFloat));
+  const auto m2_cpu =
+      at::rand({13, 45, 26}, at::device(at::kCPU).dtype(at::kFloat));
+  test_matmul(m1_cpu, m2_cpu);
+}
+
+TEST_F(VulkanAPITest, matmul_2d_weight_vulkan) {
+  // This will call at::mm
+  const auto m1_cpu =
+      at::rand({23, 45}, at::device(at::kCPU).dtype(at::kFloat));
+  const auto m2_cpu =
+      at::rand({45, 26}, at::device(at::kCPU).dtype(at::kFloat));
+  test_matmul(m1_cpu, m2_cpu, true);
+}
+
+TEST_F(VulkanAPITest, matmul_2d_weight_cpu) {
+  // This will call at::mm
+  const auto m1_cpu =
+      at::rand({23, 45}, at::device(at::kCPU).dtype(at::kFloat));
+  const auto m2_cpu =
+      at::rand({45, 26}, at::device(at::kCPU).dtype(at::kFloat));
+  test_matmul(m1_cpu, m2_cpu);
+}
+
+void test_bmm(at::Tensor m1_cpu, at::Tensor m2_cpu, bool m2_use_vulkan = false) {
   const auto out_cpu = m1_cpu.bmm(m2_cpu);
 
   const auto m1_vulkan = m1_cpu.vulkan();
-  const auto out_vulkan = m1_vulkan.bmm(m2_cpu);
+  const auto out_vulkan = m1_vulkan.bmm(
+      m2_use_vulkan ? m2_cpu.vulkan(): m2_cpu);
 
   const auto check = almostEqual(out_cpu, out_vulkan.cpu());
   if (!check) {
@@ -1105,14 +1158,21 @@ void test_bmm(at::Tensor m1_cpu, at::Tensor m2_cpu) {
   }
 
   ASSERT_TRUE(check);
-
 }
 
-TEST_F(VulkanAPITest, bmm) {
+TEST_F(VulkanAPITest, bmm_vulkan) {
   const auto m1_cpu =
-      at::rand({131, 235, 546}, at::device(at::kCPU).dtype(at::kFloat));
+      at::rand({13, 23, 45}, at::device(at::kCPU).dtype(at::kFloat));
   const auto m2_cpu =
-      at::rand({131, 546, 267}, at::device(at::kCPU).dtype(at::kFloat));
+      at::rand({13, 45, 26}, at::device(at::kCPU).dtype(at::kFloat));
+  test_bmm(m1_cpu, m2_cpu, true);
+}
+
+TEST_F(VulkanAPITest, bmm_cpu) {
+  const auto m1_cpu =
+      at::rand({13, 23, 45}, at::device(at::kCPU).dtype(at::kFloat));
+  const auto m2_cpu =
+      at::rand({13, 45, 26}, at::device(at::kCPU).dtype(at::kFloat));
   test_bmm(m1_cpu, m2_cpu);
 }
 
