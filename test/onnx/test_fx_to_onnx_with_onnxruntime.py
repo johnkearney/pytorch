@@ -960,6 +960,7 @@ class TestFxToOnnxWithOnnxRuntime(onnx_test_common._TestONNXRuntime):
             CustomModule(), args=inputs
         )
 
+        # Indirectly test ONNXProgram.update_mutated_buffers_onto_torch_model through ONNXProgram.__call__
         self.run_test_with_fx_to_onnx_exporter_and_onnx_runtime(
             exported_program, inputs, skip_dynamic_shapes_check=True
         )

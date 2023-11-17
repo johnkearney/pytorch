@@ -649,6 +649,7 @@ class ONNXProgram:
         model_signature: The model signature for the exported ONNX graph.
     """
 
+    _model_torch: Final[Union[torch.nn.Module, Callable, torch_export.ExportedProgram]]
     _model_proto: Final[onnx.ModelProto]  # type: ignore[name-defined]
     _input_adapter: Final[io_adapter.InputAdapter]
     _output_adapter: Final[io_adapter.OutputAdapter]
@@ -660,6 +661,7 @@ class ONNXProgram:
     @_beartype.beartype
     def __init__(
         self,
+        model_torch: Union[torch.nn.Module, Callable, torch_export.ExportedProgram],
         model_proto: onnx.ModelProto,  # type: ignore[name-defined]
         input_adapter: io_adapter.InputAdapter,
         output_adapter: io_adapter.OutputAdapter,
@@ -669,6 +671,7 @@ class ONNXProgram:
         export_exception: Optional[Exception] = None,
         model_signature: Optional[torch.export.ExportGraphSignature] = None,
     ):
+        self._model_torch = model_torch
         self._model_proto = model_proto
         self._model_signature = model_signature
         self._input_adapter = input_adapter
@@ -703,7 +706,48 @@ class ONNXProgram:
             for k, v in zip(ort_session.get_inputs(), onnx_input)
         }
 
-        return ort_session.run(None, onnxruntime_input)
+        onnxruntime_outputs = ort_session.run(None, onnxruntime_input)
+        # Update mutated buffers into the original PyTorch model
+        if isinstance(self._model_torch, torch.export.ExportedProgram):
+            self.update_mutated_buffers_onto_torch_model(
+                self._model_torch.module(), onnxruntime_outputs
+            )
+        return onnxruntime_outputs
+
+    def update_mutated_buffers_onto_torch_model(
+        self,
+        torch_model: torch.nn.Module,
+        onnxruntime_outputs: Sequence[
+            Union[numpy.ndarray, torch.Tensor, int, float, bool]
+        ],
+    ):
+        """Updates the mutated buffers in the original PyTorch model.
+
+        When the ONNX model is executed through :meth:`ONNXProgram.__call__`,
+        the buffers are automatically updated in the PyTorch model. However, if the
+        ONNX model is executed using onnxruntime API directly, this method can be used
+        to update the buffers in the PyTorch model.
+
+        Args:
+            torch_model: The original PyTorch model.
+            onnxruntime_outputs: The outputs from ONNX Runtime.
+        """
+        assert (
+            self.model_signature is not None
+        ), "model_signature cannot be None when model is torch.export.ExportedProgram"
+        for out, out_spec in zip(
+            onnxruntime_outputs, self.model_signature.output_specs
+        ):
+            if out_spec.kind == torch.export.graph_signature.OutputKind.BUFFER_MUTATION:
+                assert out_spec.target is not None, "Buffer name cannot be None"
+                current_buffer = getattr(torch_model, out_spec.target)
+                setattr(
+                    torch_model,
+                    out_spec.target,
+                    torch.full_like(
+                        current_buffer, out.item() if hasattr(out, "item") else out
+                    ),
+                )
 
     @property
     def model_proto(self) -> onnx.ModelProto:  # type: ignore[name-defined]
@@ -1039,6 +1083,7 @@ class ONNXProgram:
         import onnx
 
         return ONNXProgram(
+            torch.nn.Module(),
             onnx.ModelProto(),  # type: ignore[attr-defined]
             io_adapter.InputAdapter(),
             io_adapter.OutputAdapter(),
@@ -1159,6 +1204,7 @@ class Exporter:
             )
 
             return torch.onnx.ONNXProgram(
+                self.model,
                 onnx_model,
                 self.options.fx_tracer.input_adapter,
                 self.options.fx_tracer.output_adapter,
